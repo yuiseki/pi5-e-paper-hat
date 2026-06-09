@@ -136,8 +136,6 @@ def page_k3s():
         "hotosm-imagery-tile": "imagery",
         "poc-cesg-route-search": "route",
         "poc-cesg-poi-search": "poi",
-        "health": "health",
-        "hello": "hello",
     }
     # 独立 deployment: namespace/deployment -> 表示ラベル
     DEPLOY_LABELS = {
