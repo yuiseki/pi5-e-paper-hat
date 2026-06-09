@@ -193,7 +193,7 @@ def page_k3s():
 def page_diag():
     img = Image.new("1", (W, H), 255)
     d = ImageDraw.Draw(img)
-    d.text((4, 2), "network", font=font_title, fill=0)
+    d.text((4, 2), "network", font=font_k3s_title, fill=0)
     host = socket.gethostname()
     temp = sh("cat /sys/class/thermal/thermal_zone0/temp")
     temp_c = f"{int(temp) / 1000:.1f}C" if temp.isdigit() else "n/a"
@@ -208,15 +208,15 @@ def page_diag():
         ("uplink", wlan0 or "n/a"),
         ("ap", wlan1 or "n/a"),
         ("temp", temp_c),
-        ("up", up[:18]),
+        ("uptime", up[:18]),
         ("leases", clients),
         ("caddy", sh("systemctl is-active caddy")),
         ("k3s", sh("systemctl is-active k3s")),
     ]
-    y = 26
+    y = 22
     for k, v in rows:
-        d.text((4, y), f"{k:>7}: {v}", font=font_mono, fill=0)
-        y += 17
+        d.text((4, y), f"{k:>7}: {v}", font=font_k3s_mono, fill=0)
+        y += 14
     footer(d)
     return img
 
