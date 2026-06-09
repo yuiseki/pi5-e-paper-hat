@@ -105,6 +105,8 @@ def page_k3s():
     img = Image.new("1", (W, H), 255)
     d = ImageDraw.Draw(img)
     d.text((4, 2), "k3s status", font=font_k3s_title, fill=0)
+
+    # ノード一覧（control-plane 先頭）
     out = sh("kubectl get nodes --no-headers", timeout=15)
     y = 22
     if not out:
@@ -112,7 +114,6 @@ def page_k3s():
         y += 16
     else:
         ready = 0
-        # control-plane ノードを先頭に、残りはアルファベット順
         lines = sorted(
             out.splitlines(),
             key=lambda l: (0 if "control-plane" in l else 1, l),
@@ -126,15 +127,64 @@ def page_k3s():
                 mark = "OK" if ok else "NG"
                 d.text((4, y), f"[{mark}] {name}", font=font_k3s_mono, fill=0)
                 y += 14
-        d.text((4, y + 4), f"Ready: {ready}/{len(lines)}", font=font_k3s_body, fill=0)
-        y += 20
-    pods = sh(
-        "kubectl get pods -A --no-headers 2>/dev/null | "
-        "grep -cvE 'Running|Completed'"
+        d.text((4, y + 2), f"nodes {ready}/{len(lines)} ready", font=font_k3s_body, fill=0)
+        y += 16
+
+    # サービス単位のステータス（ksvc READY + 独立 deployment）
+    # ksvc: ksvc名 -> 表示ラベル のマッピング
+    KSVC_LABELS = {
+        "hotosm-imagery-tile": "imagery",
+        "poc-cesg-route-search": "route",
+        "poc-cesg-poi-search": "poi",
+    }
+    # 独立 deployment: namespace/deployment -> 表示ラベル
+    DEPLOY_LABELS = {
+        "cng-storage/cng-storage-rustfs": "storage",
+        "traccar/traccar": "traccar",
+    }
+
+    y += 2
+    d.line((4, y, W - 4, y), fill=0)
+    y += 4
+
+    # ksvc ステータス取得
+    ksvc_out = sh("kubectl get ksvc -A --no-headers 2>/dev/null", timeout=15)
+    ksvc_ready = {}
+    for line in ksvc_out.splitlines():
+        parts = line.split()
+        if len(parts) >= 5:
+            name, ready_col = parts[1], parts[4]
+            ksvc_ready[name] = ready_col == "True"
+
+    for ksvc_name, label in KSVC_LABELS.items():
+        if ksvc_name in ksvc_ready:
+            mark = "OK" if ksvc_ready[ksvc_name] else "NG"
+        else:
+            mark = "??"
+        d.text((4, y), f"[{mark}] {label}", font=font_k3s_mono, fill=0)
+        y += 14
+
+    # deployment ステータス取得
+    deploy_out = sh(
+        "kubectl get deployment -A --no-headers 2>/dev/null", timeout=15
     )
-    total = sh("kubectl get pods -A --no-headers 2>/dev/null | wc -l")
-    if total:
-        d.text((4, y + 4), f"Pods: {total} ({pods or 0} abnormal)", font=font_k3s_body, fill=0)
+    deploy_ready = {}
+    for line in deploy_out.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            ns, name, ready_col = parts[0], parts[1], parts[2]
+            desired = ready_col.split("/")[1] if "/" in ready_col else "0"
+            current = ready_col.split("/")[0] if "/" in ready_col else "0"
+            deploy_ready[f"{ns}/{name}"] = (current == desired and int(desired) > 0)
+
+    for key, label in DEPLOY_LABELS.items():
+        if key in deploy_ready:
+            mark = "OK" if deploy_ready[key] else "NG"
+        else:
+            mark = "??"
+        d.text((4, y), f"[{mark}] {label}", font=font_k3s_mono, fill=0)
+        y += 14
+
     footer(d)
     return img
 
