@@ -197,7 +197,14 @@ def page_diag():
     host = socket.gethostname()
     temp = sh("cat /sys/class/thermal/thermal_zone0/temp")
     temp_c = f"{int(temp) / 1000:.1f}C" if temp.isdigit() else "n/a"
-    up = sh("uptime -p").replace("up ", "")
+    try:
+        secs = int(float(open("/proc/uptime").read().split()[0]))
+        d, r = divmod(secs, 86400)
+        h, r = divmod(r, 3600)
+        m, s = divmod(r, 60)
+        up = f"{d} days, {h:02d}:{m:02d}:{s:02d}" if d else f"{h:02d}:{m:02d}:{s:02d}"
+    except Exception:
+        up = "n/a"
     wlan0 = sh("ip -4 -br addr show wlan0 | awk '{print $3}'").split("/")[0]
     wlan1 = sh("ip -4 -br addr show wlan1 | awk '{print $3}'").split("/")[0]
     clients = sh(
@@ -208,7 +215,7 @@ def page_diag():
         ("uplink", wlan0 or "n/a"),
         ("ap", wlan1 or "n/a"),
         ("temp", temp_c),
-        ("uptime", up[:18]),
+        ("uptime", up),
         ("leases", clients),
         ("caddy", sh("systemctl is-active caddy")),
         ("k3s", sh("systemctl is-active k3s")),
