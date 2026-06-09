@@ -199,10 +199,10 @@ def page_diag():
     temp_c = f"{int(temp) / 1000:.1f}C" if temp.isdigit() else "n/a"
     try:
         secs = int(float(open("/proc/uptime").read().split()[0]))
-        d, r = divmod(secs, 86400)
+        days, r = divmod(secs, 86400)
         h, r = divmod(r, 3600)
         m, s = divmod(r, 60)
-        up = f"{d} days, {h:02d}:{m:02d}:{s:02d}" if d else f"{h:02d}:{m:02d}:{s:02d}"
+        up = f"{days} days, {h:02d}:{m:02d}:{s:02d}" if days else f"{h:02d}:{m:02d}:{s:02d}"
     except Exception:
         up = "n/a"
     wlan0 = sh("ip -4 -br addr show wlan0 | awk '{print $3}'").split("/")[0]
