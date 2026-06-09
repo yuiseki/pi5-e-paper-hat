@@ -136,6 +136,8 @@ def page_k3s():
         "hotosm-imagery-tile": "imagery",
         "poc-cesg-route-search": "route",
         "poc-cesg-poi-search": "poi",
+        "health": "health",
+        "hello": "hello",
     }
     # 独立 deployment: namespace/deployment -> 表示ラベル
     DEPLOY_LABELS = {
@@ -152,8 +154,9 @@ def page_k3s():
     ksvc_ready = {}
     for line in ksvc_out.splitlines():
         parts = line.split()
-        if len(parts) >= 5:
-            name, ready_col = parts[1], parts[4]
+        # NAMESPACE NAME URL LATESTCREATED LATESTREADY READY [REASON]
+        if len(parts) >= 6:
+            name, ready_col = parts[1], parts[5]
             ksvc_ready[name] = ready_col == "True"
 
     for ksvc_name, label in KSVC_LABELS.items():
