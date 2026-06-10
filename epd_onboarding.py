@@ -32,6 +32,14 @@ from PIL import Image, ImageDraw, ImageFont
 from waveshare_epd import epd2in7_V2
 
 import epd_map_capture
+from k3s_status import (
+    count_abnormal_pods,
+    ksvc_reachable,
+    parse_deployment_ready,
+    parse_ksvc_ready,
+    parse_node_status,
+    parse_pod_ready,
+)
 
 # --- 設定 (.env 由来) ---
 SSID = config.WIFI_SSID
@@ -113,21 +121,13 @@ def page_k3s():
         d.text((4, y), "k3s: unavailable", font=font_k3s_body, fill=0)
         y += 16
     else:
-        ready = 0
-        lines = sorted(
-            out.splitlines(),
-            key=lambda l: (0 if "control-plane" in l else 1, l),
-        )
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                name, st = parts[0], parts[1]
-                ok = st == "Ready"
-                ready += ok
-                mark = "OK" if ok else "NG"
-                d.text((4, y), f"[{mark}] {name}", font=font_k3s_mono, fill=0)
-                y += 14
-        d.text((4, y + 2), f"nodes {ready}/{len(lines)} ready", font=font_k3s_body, fill=0)
+        nodes = parse_node_status(out)
+        ready = sum(node.ready for node in nodes)
+        for node in nodes:
+            mark = "OK" if node.ready else "NG"
+            d.text((4, y), f"[{mark}] {node.name}", font=font_k3s_mono, fill=0)
+            y += 14
+        d.text((4, y + 2), f"nodes {ready}/{len(nodes)} ready", font=font_k3s_body, fill=0)
         y += 16
 
     # サービス単位のステータス（ksvc READY + 独立 deployment）
@@ -149,34 +149,33 @@ def page_k3s():
 
     # ksvc ステータス取得
     ksvc_out = sh("kubectl get ksvc -A --no-headers 2>/dev/null", timeout=15)
-    ksvc_ready = {}
-    for line in ksvc_out.splitlines():
-        parts = line.split()
-        # NAMESPACE NAME URL LATESTCREATED LATESTREADY READY [REASON]
-        if len(parts) >= 6:
-            name, ready_col = parts[1], parts[5]
-            ksvc_ready[name] = ready_col == "True"
+    deploy_out = sh(
+        "kubectl get deployment -A --no-headers 2>/dev/null", timeout=15
+    )
+    pods_out = sh("kubectl get pods -A --no-headers 2>/dev/null", timeout=15)
+
+    ksvc_ready = parse_ksvc_ready(ksvc_out)
+    deploy_ready = parse_deployment_ready(deploy_out)
+    pod_ready_raw = parse_pod_ready(pods_out)
+    pod_ready = {
+        "kourier-system/3scale-kourier-gateway": any(
+            key.startswith("kourier-system/3scale-kourier-gateway") and value
+            for key, value in pod_ready_raw.items()
+        ),
+        "knative-serving/activator": any(
+            key.startswith("knative-serving/activator") and value
+            for key, value in pod_ready_raw.items()
+        ),
+    }
+    abnormal_pods = count_abnormal_pods(pods_out)
 
     for ksvc_name, label in KSVC_LABELS.items():
         if ksvc_name in ksvc_ready:
-            mark = "OK" if ksvc_ready[ksvc_name] else "NG"
+            mark = "OK" if ksvc_reachable(ksvc_ready[ksvc_name], pod_ready) else "NG"
         else:
             mark = "??"
         d.text((4, y), f"[{mark}] {label}", font=font_k3s_mono, fill=0)
         y += 14
-
-    # deployment ステータス取得
-    deploy_out = sh(
-        "kubectl get deployment -A --no-headers 2>/dev/null", timeout=15
-    )
-    deploy_ready = {}
-    for line in deploy_out.splitlines():
-        parts = line.split()
-        if len(parts) >= 3:
-            ns, name, ready_col = parts[0], parts[1], parts[2]
-            desired = ready_col.split("/")[1] if "/" in ready_col else "0"
-            current = ready_col.split("/")[0] if "/" in ready_col else "0"
-            deploy_ready[f"{ns}/{name}"] = (current == desired and int(desired) > 0)
 
     for key, label in DEPLOY_LABELS.items():
         if key in deploy_ready:
@@ -185,6 +184,8 @@ def page_k3s():
             mark = "??"
         d.text((4, y), f"[{mark}] {label}", font=font_k3s_mono, fill=0)
         y += 14
+
+    d.text((4, y + 2), f"abnormal pods {abnormal_pods}", font=font_k3s_body, fill=0)
 
     footer(d)
     return img
