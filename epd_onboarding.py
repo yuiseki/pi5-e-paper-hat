@@ -14,7 +14,6 @@ KEY4(GPIO19): 単押し = Wi-Fi QR に戻る (ESC) / 長押し(1秒) = 地図表
 
 設定は同ディレクトリの .env (config.py 経由) から読む。
 """
-import glob
 import os
 import signal
 import socket
@@ -246,8 +245,8 @@ def page_map_loading():
 
 
 class Onboarding:
-    def __init__(self):
-        self.epd = epd2in7_V2.EPD()
+    def __init__(self, epd):
+        self.epd = epd
         self.page = 0
         self.dirty = True
         self.last_render = 0.0
@@ -324,41 +323,38 @@ class Onboarding:
                 time.time() - self.last_render > AUTO_REFRESH_SEC
             )
             if self.dirty or auto:
-                if not spi_present():
-                    print("SPI device gone; waiting for reconnect...", flush=True)
-                    while not spi_present():
-                        time.sleep(SPI_WAIT_SEC)
-                    print("SPI device back; resuming render.", flush=True)
-                    self.dirty = True
                 try:
                     self.render()
                 except Exception as e:
                     print(f"render failed: {e}", flush=True)
-                    time.sleep(10)  # 失敗時は少し待って再試行
+                    time.sleep(30)  # 失敗時は少し待って再試行
                     self.dirty = True
             time.sleep(0.2)
 
 
-SPI_GLOB = "/dev/spidev0.*"
-SPI_WAIT_SEC = 30
+EPD_INIT_RETRY_SEC = 30
 
 
-def spi_present() -> bool:
-    return bool(glob.glob(SPI_GLOB))
-
-
-def wait_for_spi():
-    if spi_present():
-        return
-    print("e-Paper SPI device not found; waiting for it to appear...", flush=True)
-    while not spi_present():
-        time.sleep(SPI_WAIT_SEC)
-    print("SPI device found; continuing startup.", flush=True)
+def _init_epd() -> epd2in7_V2.EPD:
+    """EPD の初期化を試み、失敗したら HAT が無いとみなして待機・リトライする。"""
+    while True:
+        try:
+            epd = epd2in7_V2.EPD()
+            epd.init()   # BUSY ピン応答を含む初期化でハードウェアを実際に確認
+            epd.sleep()  # 初期化直後は省電力モードへ
+            return epd
+        except Exception as e:
+            print(
+                f"e-Paper init failed ({e}); HAT not detected."
+                f" Retrying in {EPD_INIT_RETRY_SEC}s...",
+                flush=True,
+            )
+            time.sleep(EPD_INIT_RETRY_SEC)
 
 
 def main():
-    wait_for_spi()
-    ob = Onboarding()
+    epd = _init_epd()
+    ob = Onboarding(epd)
 
     def cleanup(*_):
         print("cleanup: epd sleep", flush=True)
